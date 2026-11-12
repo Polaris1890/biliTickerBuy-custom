@@ -1,0 +1,44 @@
+name: Build custom Windows package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-local.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements-local.txt
+          python -m pip install --no-deps -e .
+          python -m pip install pyinstaller==6.22.3
+      - name: Run regression tests
+        env:
+          BTB_SKIP_INITIAL_TIME_SYNC: '1'
+          GRADIO_ANALYTICS_ENABLED: 'False'
+        run: python -m pytest tests/test_upload_consistency.py tests/test_per_file_schedule.py tests/test_go_ticket_preview.py tests/test_link_goods.py tests/test_buy_time_sync.py tests/test_buy_env_vars.py -q
+      - name: Build and package
+        shell: pwsh
+        run: |
+          python -m PyInstaller main.spec
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item dist/biliTickerBuy.exe release/
+          Copy-Item LICENSE release/
+          Copy-Item docs/installation-custom.md release/INSTALL.md
+          Compress-Archive -Path release/* -DestinationPath biliTickerBuy-custom-windows.zip
+          (Get-FileHash biliTickerBuy-custom-windows.zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  biliTickerBuy-custom-windows.zip' | Set-Content SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: biliTickerBuy-custom-windows
+          path: |
+            biliTickerBuy-custom-windows.zip
+            SHA256SUMS.txt
